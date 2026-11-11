@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "cornerstone.audio",
   "name": "Cornerstone Audio",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": "Kush Beaver Productionz",
-  "description": "Volume slider, output picker, per-app mixer with a device picker for each app",
+  "description": "Volume, devices, a per-app output picker and a microphone choice for each app",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Cornerstone Audio",
-    "description": "Volume slider, output picker, per-app mixer with a device picker for each app",
+    "description": "Volume, devices, a per-app output picker and a microphone choice for each app",
     "category": "Audio",
     "allowMultiple": false
   },

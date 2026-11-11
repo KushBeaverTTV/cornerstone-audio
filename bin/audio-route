@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# Cornerstone Audio: where each app's sound goes.
+#
+#   audio-route play <stream node id> <output node name>   send one app's sound to an output
+#   audio-route mics                                       JSON: apps that record or have recorded
+#   audio-route pin <app> <input node name>                always feed <app> from that microphone
+#   audio-route unpin <app>                                <app> follows the default input again
+#   audio-route enforce                                    put every recording app on its chosen mic
+#
+# Microphone choices live in ~/.config/omarchy/audio-mic-pins.json as
+# {"<application.name>": "<source node name>"}. Cornerstone dictation reads its
+# own entry ("Cornerstone") from that file, so its shape must not change.
+#
+# An app only has a microphone stream while it listens, so a choice made
+# beforehand has nothing to move yet. The panel therefore runs `enforce` each
+# time a recording stream appears, open or not. WirePlumber remembers apps by
+# application.name too, which is how apps that recorded before are found.
+set -u
+
+PINS=${CORNERSTONE_AUDIO_PINS:-${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/audio-mic-pins.json}
+WP_STATE=${CORNERSTONE_AUDIO_WP_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/wireplumber/stream-properties}
+# Apps let go ("follow default input") while not recording: WirePlumber still
+# remembers their old mic, so it is cleared the next time they record.
+RELEASED=${CORNERSTONE_AUDIO_RELEASED:-${XDG_STATE_HOME:-$HOME/.local/state}/cornerstone-audio/released-mics}
+
+# Not listed as apps: level meters, monitors, test recorders and launchers'
+# helpers. (Only the list hides them; a choice made for one is still applied.)
+NOT_APPS='peak|monitor|meter|quickshell|omarchy-|pavucontrol|^pw-record$|^pw-cat$|^parec$|^arecord$|^cs-captest$|^Test Recorder$|^upc\.exe$|^UplayWebCore\.exe$'
+
+die() { echo "audio-route: $*" >&2; exit 2; }
+
+read_pins() {
+  [[ -s $PINS ]] && jq -c 'if type == "object" then . else {} end' "$PINS" 2>/dev/null || echo '{}'
+}
+
+# Rewrite the pins file with the jq filter $1 (args after it go to jq), under a
+# lock so two quick clicks cannot lose one of the changes, and through a temp
+# file so a reader never sees half a file.
+edit_pins() {
+  local filter=$1; shift
+  mkdir -p "${PINS%/*}"
+  exec 9>"${XDG_RUNTIME_DIR:-/tmp}/cornerstone-audio-pins.lock"
+  flock -w 5 9 || die "pins file is locked"
+  local tmp
+  tmp=$(mktemp "$PINS.XXXXXX") || die "cannot write next to $PINS"
+  if read_pins | jq "$@" "$filter" >"$tmp"; then
+    mv -f "$tmp" "$PINS"
+  else
+    rm -f "$tmp"; die "could not update $PINS"
+  fi
+  exec 9>&-
+}
+
+# Apps recording right now: [{app, id (node id), serial, source (node name)}].
+recording() {
+  local sources outputs
+  sources=$(pactl -f json list sources 2>/dev/null) || sources='[]'
+  outputs=$(pactl -f json list source-outputs 2>/dev/null) || outputs='[]'
+  jq -c -n --argjson sources "$sources" --argjson outputs "$outputs" '
+    ($sources | map({key: (.index | tostring), value: .name}) | from_entries) as $name
+    | [ $outputs[]
+        | { app: (.properties["application.name"] // ""),
+            id: (.properties["object.id"] // ""),
+            serial: .index,
+            source: ($name[(.source | tostring)] // "") }
+        | select(.app != "")
+        # recording a monitor is capturing playback, not a microphone
+        | select(.source | endswith(".monitor") | not) ]'
+}
+
+# Apps WirePlumber has seen record, one per line.
+remembered() {
+  [[ -r $WP_STATE ]] || return 0
+  sed -n 's/^Input\/Audio:application\.name:\(.*\)={.*/\1/p' "$WP_STATE" | sed 's/\\s/ /g'
+}
+
+released() { [[ -r $RELEASED ]] && grep -v '^$' "$RELEASED"; return 0; }
+
+# Add (+) or remove (-) an app on the released list.
+mark_released() {
+  local sign=$1 app=$2 rest
+  rest=$(released | grep -vxF -- "$app")
+  [[ $sign == + ]] && rest=$(printf '%s\n%s' "$rest" "$app")
+  mkdir -p "${RELEASED%/*}"
+  printf '%s\n' "$rest" | grep -v '^$' >"$RELEASED.tmp"; mv -f "$RELEASED.tmp" "$RELEASED"
+}
+
+# Move a recording app's live streams onto a source (or, with "", let them
+# follow the default input and make WirePlumber forget the device).
+move_recordings() {
+  local app=$1 source=$2
+  recording | jq -r --arg app "$app" '.[] | select(.app == $app) | "\(.serial)\t\(.id)"' |
+    while IFS=$'\t' read -r serial id; do
+      if [[ -n $source ]]; then
+        pactl move-source-output "$serial" "$source"
+      elif [[ $id =~ ^[0-9]+$ ]]; then
+        pw-metadata -n default -- "$id" target.object -1 Spa:Id >/dev/null
+        pw-metadata -n default -- "$id" target.node -1 Spa:Id >/dev/null
+      fi
+    done
+}
+
+case "${1:-}" in
+  play)
+    id=${2:-}; output=${3:-}
+    [[ $id =~ ^[0-9]+$ && -n $output ]] || die "usage: play <stream node id> <output node name>"
+    # The panel knows the stream by node id; pactl wants its serial.
+    serial=$(wpctl inspect "$id" 2>/dev/null | sed -n 's/.*object\.serial = "\([0-9]\+\)".*/\1/p' | head -n1)
+    [[ -n $serial ]] || { echo "audio-route: stream $id is gone" >&2; exit 3; }
+    # WirePlumber remembers the move per app, as it does for any mixer.
+    exec pactl move-sink-input "$serial" "$output"
+    ;;
+  mics)
+    jq -c -n --argjson now "$(recording)" --argjson pins "$(read_pins)" \
+          --arg seen "$(remembered)" --arg skip "$NOT_APPS" '
+      ($now | group_by(.app) | map({key: .[0].app, value: .[0].source}) | from_entries) as $live
+      | ([$seen | split("\n")[] | select(. != "")] + ($pins | keys) + ($live | keys) | unique) as $apps
+      | [ $apps[] | select(test($skip; "i") | not) | . as $app
+          | {app: $app, live: ($live | has($app)), source: ($live[$app] // ""), pin: ($pins[$app] // "")} ]'
+    ;;
+  pin)
+    app=${2:-}; source=${3:-}
+    [[ -n $app && -n $source ]] || die "usage: pin <app> <input node name>"
+    edit_pins '.[$app] = $source' --arg app "$app" --arg source "$source"
+    mark_released - "$app"
+    move_recordings "$app" "$source"
+    ;;
+  unpin)
+    app=${2:-}
+    [[ -n $app ]] || die "usage: unpin <app>"
+    edit_pins 'del(.[$app])' --arg app "$app"
+    if recording | jq -e --arg app "$app" 'any(.[]; .app == $app)' >/dev/null; then
+      move_recordings "$app" ""
+    else
+      mark_released + "$app"
+    fi
+    ;;
+  enforce)
+    pins=$(read_pins)
+    let_go=$(released)
+    [[ $pins == '{}' && -z $let_go ]] && exit 0
+    now=$(recording)
+    # Released apps that are recording again: drop the device WirePlumber
+    # remembered for them, so they follow the default input from now on.
+    while IFS= read -r app; do
+      [[ -n $app ]] || continue
+      jq -e --arg app "$app" 'any(.[]; .app == $app)' <<<"$now" >/dev/null || continue
+      [[ $(jq -r --arg app "$app" '.[$app] // empty' <<<"$pins") ]] || move_recordings "$app" ""
+      mark_released - "$app"
+    done <<<"$let_go"
+    [[ $pins == '{}' ]] && exit 0
+    present=$(pactl -f json list sources 2>/dev/null | jq -c 'map(.name)') || exit 0
+    jq -r --argjson pins "$pins" --argjson present "$present" '
+      .[] | select($pins[.app] != null and $pins[.app] != .source)
+          # a chosen mic that is unplugged: leave the app where it is
+          | select($pins[.app] as $want | $present | index($want))
+          | "\(.serial)\t\($pins[.app])"' <<<"$now" |
+      while IFS=$'\t' read -r serial source; do
+        pactl move-source-output "$serial" "$source"
+      done
+    ;;
+  *)
+    sed -n '3,8s/^# \{0,1\}//p' "$0" >&2
+    exit 2
+    ;;
+esac
