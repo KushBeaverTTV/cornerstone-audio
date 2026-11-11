@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "cornerstone.audio",
+  "name": "Cornerstone Audio",
+  "version": "1.0.0",
+  "author": "Kush Beaver Productionz",
+  "description": "Volume slider, output picker, per-app mixer with a device picker for each app",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Cornerstone Audio",
+    "description": "Volume slider, output picker, per-app mixer with a device picker for each app",
+    "category": "Audio",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.audio"
+  }
+}
