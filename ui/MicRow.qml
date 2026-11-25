@@ -11,6 +11,7 @@ CursorSurface {
 
   property QtObject bar: null
   property string name: ""
+  property string iconSource: ""
   property bool live: false
   property string routeGlyph: ""
   property string routeLabel: ""
@@ -42,20 +43,43 @@ CursorSurface {
 
       Item {
         width: parent.width
-        implicitHeight: Math.max(glyph.implicitHeight, title.implicitHeight)
+        implicitHeight: Math.max(Style.space(22), title.implicitHeight)
 
-        PlainLabel {
+        Item {
           id: glyph
-          bar: mic.bar
-          tier: "title"
-          text: Audio.GLYPH.mic
-          color: mic.live ? Commons.Color.accent : glyph.ink
-          opacity: mic.live ? 1 : 0.55
           width: Style.space(22)
-          horizontalAlignment: Text.AlignHCenter
-          elide: Text.ElideNone
+          height: Style.space(22)
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
+
+          Image {
+            id: appImg
+            anchors.centerIn: parent
+            width: Style.space(18)
+            height: width
+            visible: mic.iconSource !== "" && status === Image.Ready
+            source: mic.iconSource
+            sourceSize.width: 48
+            sourceSize.height: 48
+            fillMode: Image.PreserveAspectFit
+            opacity: mic.live ? 1 : 0.7
+            asynchronous: true
+            smooth: true
+            mipmap: true
+          }
+
+          PlainLabel {
+            id: micGlyph
+            anchors.centerIn: parent
+            visible: !appImg.visible
+            bar: mic.bar
+            tier: "title"
+            text: Audio.GLYPH.mic
+            color: mic.live ? Commons.Color.accent : micGlyph.ink
+            opacity: mic.live ? 1 : 0.55
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideNone
+          }
         }
 
         PlainLabel {

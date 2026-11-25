@@ -90,6 +90,27 @@ Panel {
 
   // ---------------------------------------------------------------- what the rows say
 
+  function appIconFor(name, node) {
+    var appsRev = DesktopEntries.applications.values.length
+    var names = Audio.appIconCandidates(name, node)
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i]
+      if (n.charAt(0) === "/") return "file://" + n
+      var themed = Quickshell.iconPath(n, true)
+      if (themed) return themed
+    }
+    for (var j = 0; j < names.length; j++) {
+      var d = DesktopEntries.byId(names[j]) || DesktopEntries.heuristicLookup(names[j])
+      if (d && d.icon) {
+        var icon = String(d.icon)
+        if (icon.charAt(0) === "/") return "file://" + icon
+        var hit = Quickshell.iconPath(icon, true)
+        if (hit) return hit
+      }
+    }
+    return ""
+  }
+
   function appRoute(row) {
     var output = graph.resolve(graph.appOutput[row.id])
     return output
@@ -598,6 +619,7 @@ Panel {
                 width: page.width
                 bar: root.bar
                 name: Audio.appName(node, root.players, graph.playbackNodes)
+                iconSource: root.appIconFor(name, node)
                 volume: node && node.audio ? node.audio.volume : 0
                 muted: node && node.audio ? node.audio.muted : false
                 featured: Audio.isCurrentPlayer(node, root.currentPlayer, root.players, graph.playbackNodes)
@@ -656,6 +678,7 @@ Panel {
                 width: page.width
                 bar: root.bar
                 name: Audio.micAppName(modelData.app)
+                iconSource: root.appIconFor(name, null)
                 live: !!modelData.live
                 routeGlyph: route.glyph
                 routeLabel: route.label

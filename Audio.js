@@ -307,6 +307,35 @@ function arrangeMicApps(list, expanded, minimum) {
   return { shown: sorted.slice(0, keep), hidden: sorted.length - keep }
 }
 
+// Candidate icon-theme and desktop-entry names for an app row.
+var ICON_ALIASES = {
+  "cornerstone dictation": ["cornerstone-hq", "cornerstone"],
+  "cornerstone": ["cornerstone-hq", "cornerstone"],
+  "google chrome": ["google-chrome"],
+  "chrome": ["google-chrome"],
+  "brave": ["brave-browser", "brave"],
+  "discord": ["discord", "omarchy-discord"],
+  "spotify": ["spotify"],
+  "firefox": ["firefox"]
+}
+
+function appIconCandidates(name, node) {
+  var p = props(node)
+  var raw = [p["application.icon-name"], p["application.process.binary"], name, p["application.name"]]
+  var out = []
+  function add(v) {
+    var s = String(v || "").trim()
+    if (!s) return
+    if (out.indexOf(s) === -1) out.push(s)
+    var slug = s.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "")
+    if (slug && out.indexOf(slug) === -1) out.push(slug)
+  }
+  for (var i = 0; i < raw.length; i++) add(raw[i])
+  var aliasList = ICON_ALIASES[String(name || "").trim().toLowerCase()]
+  if (aliasList) for (var j = 0; j < aliasList.length; j++) add(aliasList[j])
+  return out
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     GLYPH: GLYPH,
@@ -331,6 +360,7 @@ if (typeof module !== "undefined") {
     appName: appName,
     isCurrentPlayer: isCurrentPlayer,
     micAppName: micAppName,
-    arrangeMicApps: arrangeMicApps
+    arrangeMicApps: arrangeMicApps,
+    appIconCandidates: appIconCandidates
   }
 }

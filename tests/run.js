@@ -117,6 +117,12 @@ test("mic app names", () => {
   assert.strictEqual(Audio.micAppName("NBA2K27.exe"), "NBA2K27")
   assert.strictEqual(Audio.micAppName("WEBRTC VoiceEngine"), "Discord")
 })
+test("app icon candidates", () => {
+  const c = Audio.appIconCandidates("Cornerstone Dictation", null)
+  assert.ok(c.indexOf("cornerstone-hq") !== -1)
+  const g = Audio.appIconCandidates("Google Chrome", node({ properties: { "application.icon-name": "google-chrome" } }))
+  assert.strictEqual(g[0], "google-chrome")
+})
 test("mic apps: recording, then chosen, then the rest folded away", () => {
   const list = [
     { app: "Zed", live: false, pin: "" }, { app: "Brave input", live: true, pin: "" },

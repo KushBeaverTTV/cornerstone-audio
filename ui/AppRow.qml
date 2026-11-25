@@ -10,6 +10,7 @@ CursorSurface {
 
   property QtObject bar: null
   property string name: ""
+  property string iconSource: ""
   property real volume: 0
   property bool muted: false
   // the media player the shell treats as current
@@ -48,19 +49,40 @@ CursorSurface {
 
       Item {
         width: parent.width
-        implicitHeight: Math.max(muteGlyph.implicitHeight, title.implicitHeight)
+        implicitHeight: Math.max(Style.space(22), title.implicitHeight)
 
-        PlainLabel {
+        Item {
           id: muteGlyph
-          bar: app.bar
-          tier: "title"
-          text: app.muted ? Audio.GLYPH.appMuted : Audio.GLYPH.appOn
-          opacity: app.muted ? 0.5 : 1
           width: Style.space(22)
-          horizontalAlignment: Text.AlignHCenter
-          elide: Text.ElideNone
+          height: Style.space(22)
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
+
+          Image {
+            id: appImg
+            anchors.centerIn: parent
+            width: Style.space(18)
+            height: width
+            visible: app.iconSource !== "" && status === Image.Ready && !app.muted
+            source: app.iconSource
+            sourceSize.width: 48
+            sourceSize.height: 48
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            smooth: true
+            mipmap: true
+          }
+
+          PlainLabel {
+            anchors.centerIn: parent
+            visible: !appImg.visible
+            bar: app.bar
+            tier: "title"
+            text: app.muted ? Audio.GLYPH.appMuted : Audio.GLYPH.appOn
+            opacity: app.muted ? 0.5 : 1
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideNone
+          }
 
           MouseArea {
             anchors.fill: parent
